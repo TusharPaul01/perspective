@@ -16,10 +16,9 @@ import decompressUnzip from "decompress-unzip";
 import { promises as fs } from "fs";
 import { Octokit } from "octokit";
 import readline from "readline";
+import sh from "./sh.mjs";
 
-const CURRENT_TAG = execSync("git describe --exact-match --tags")
-    .toString()
-    .trim();
+const CURRENT_TAG = sh`git describe --exact-match --tags`.execSync();
 
 // Artifacts Docs:
 // https://docs.github.com/en/rest/actions/artifacts
@@ -216,22 +215,25 @@ if (proceed.toLowerCase() === "y") {
         recursive: true,
     });
 
-    const release = await octokit.request(
-        "POST /repos/{owner}/{repo}/releases",
-        {
-            owner: "finos",
-            repo: "perspective",
-            tag_name: CURRENT_TAG,
-            name: CURRENT_TAG,
-            body: "Release of perspective",
-            draft: false,
-            prerelease: false,
-            generate_release_notes: false,
-            headers: {
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-        }
-    );
+    if (process.env.CI) {
+        console.log(`Creating GitHub Release ${CURRENT_TAG}`);
+        const release = await octokit.request(
+            "POST /repos/{owner}/{repo}/releases",
+            {
+                owner: "finos",
+                repo: "perspective",
+                tag_name: CURRENT_TAG,
+                name: CURRENT_TAG,
+                // body: "Release of perspective",
+                draft: true,
+                prerelease: false,
+                generate_release_notes: true,
+                headers: {
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+            }
+        );
+    }
 
     // Download the artifact folders
     await Promise.all(
@@ -247,17 +249,19 @@ if (proceed.toLowerCase() === "y") {
                 }
             );
 
-            await octokit.request({
-                method: "POST",
-                url: release.data.upload_url,
-                owner: "finos",
-                repo: "perspective",
-                data: download.data,
-                name: `${artifact.name}.zip`,
-                headers: {
-                    "X-GitHub-Api-Version": "2022-11-28",
-                },
-            });
+            if (process.env.CI) {
+                await octokit.request({
+                    method: "POST",
+                    url: release.data.upload_url,
+                    owner: "finos",
+                    repo: "perspective",
+                    data: download.data,
+                    name: `${artifact.name}.zip`,
+                    headers: {
+                        "X-GitHub-Api-Version": "2022-11-28",
+                    },
+                });
+            }
 
             if (!artifact.name.includes("pyodide")) {
                 // Write out the zip file
@@ -272,27 +276,31 @@ if (proceed.toLowerCase() === "y") {
     // Unzip the folders
     await Promise.all(
         python_dist_folders.map(async (artifact) => {
-            await decompress(
-                `${dist_folder}/${artifact.name}.zip`,
-                `${dist_folder}/${artifact.name}`,
-                {
-                    plugins: [decompressUnzip()],
-                }
-            );
+            if (!artifact.name.includes("pyodide")) {
+                await decompress(
+                    `${dist_folder}/${artifact.name}.zip`,
+                    `${dist_folder}/${artifact.name}`,
+                    {
+                        plugins: [decompressUnzip()],
+                    }
+                );
+            }
         })
     );
 
     // Move the wheels
     await Promise.all(
         python_dist_folders.map(async (artifact) => {
-            await cp(
-                [`${dist_folder}/${artifact.name}/*.whl`],
-                `${wheel_folder}`
-            );
-            await cp(
-                [`${dist_folder}/${artifact.name}/*.tar.gz`],
-                `${wheel_folder}`
-            );
+            if (!artifact.name.includes("pyodide")) {
+                await cp(
+                    [`${dist_folder}/${artifact.name}/*.whl`],
+                    `${wheel_folder}`
+                );
+                await cp(
+                    [`${dist_folder}/${artifact.name}/*.tar.gz`],
+                    `${wheel_folder}`
+                );
+            }
         })
     );
 
@@ -326,17 +334,19 @@ if (proceed.toLowerCase() === "y") {
                 }
             );
 
-            await octokit.request({
-                method: "POST",
-                url: release.data.upload_url,
-                owner: "finos",
-                repo: "perspective",
-                data: download.data,
-                name: `${artifact.name}.zip`,
-                headers: {
-                    "X-GitHub-Api-Version": "2022-11-28",
-                },
-            });
+            if (process.env.CI) {
+                await octokit.request({
+                    method: "POST",
+                    url: release.data.upload_url,
+                    owner: "finos",
+                    repo: "perspective",
+                    data: download.data,
+                    name: `${artifact.name}.zip`,
+                    headers: {
+                        "X-GitHub-Api-Version": "2022-11-28",
+                    },
+                });
+            }
 
             // Write out the zip file
             await fs.appendFile(

@@ -1609,4 +1609,3 @@ jobs:
                   CI: true
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   GITHUB_WORKFLOW_ID: ${{ github.run_id }}
-                  COMMIT: ${{ github.sha }}
